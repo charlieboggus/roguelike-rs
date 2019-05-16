@@ -1,7 +1,9 @@
 # roguelike-rs
-A roguelike game made with Rust using the tcod-rs library.
+A roguelike game written in Rust using [tcod-rs](https://github.com/tomassedovic/tcod-rs).
 
-# Controls:
+TODO: screenshot
+
+### Controls:
 
 |Game Action | Keybinding |
 |------------|:----------:|
@@ -10,5 +12,13 @@ A roguelike game made with Rust using the tcod-rs library.
 | Move player left | `a` |
 | Move player right | `d` |
 
-# License:
+### Requirements:
+- [Rust](https://www.rust-lang.org/en-US/install.html)
+- libsdl1.2-dev
+- libsdl2-dev
+
+### Building:
+TODO: This
+
+### License:
 TODO: this

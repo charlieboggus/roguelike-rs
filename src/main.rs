@@ -5,41 +5,30 @@ extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
 
-mod game;
 mod map;
-mod entity;
-mod menus;
-mod gui;
+mod object;
 
-use crate::game::TCOD;
-use crate::map::{ MAP_WIDTH, MAP_HEIGHT };
-use crate::gui::PANEL_HEIGHT;
-
-use tcod::console::{ Root, FontType, Offscreen };
-use tcod::map::Map as FovMap;
+use tcod::console::*;
 
 pub const SCREEN_WIDTH: i32 = 80;
 pub const SCREEN_HEIGHT: i32 = 50;
+const FPS_LIMIT: i32 = 60;
 
 fn main() 
 {
-    // Create the root console
-    let root = Root::initializer()
-        .font_type(FontType::Greyscale)
+    // Initialize the root console
+    let mut root = Root::initializer()
         .size(SCREEN_WIDTH, SCREEN_HEIGHT)
         .title("roguelike-rs")
         .init();
-    tcod::system::set_fps(60);
-    
-    // Create the TCOD struct
-    let mut tcod = TCOD {
-        root: root,
-        con: Offscreen::new(MAP_WIDTH, MAP_HEIGHT),
-        panel: Offscreen::new(SCREEN_WIDTH, PANEL_HEIGHT),  // todo: change these values
-        fov: FovMap::new(MAP_WIDTH, MAP_HEIGHT),
-        mouse: Default::default()
-    };
+    tcod::system::set_fps(FPS_LIMIT);
 
-    // show main menu
-    menus::main_menu(&mut tcod);
+    let mut map = map::Map::new();
+    let pos = map.generate();
+
+    root.clear();
+    map.recompute_fov(pos);
+    map.draw(&mut root);
+    root.flush();
+    root.wait_for_keypress(true);
 }

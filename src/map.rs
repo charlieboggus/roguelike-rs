@@ -1,147 +1,191 @@
-use crate::game::{ Game, PLAYER_ID };
-use crate::entity::Entity;
+use tcod::colors::{ self, Color };
+use tcod::console::{ Console, BackgroundFlag };
+use tcod::map::{ Map as FovMap, FovAlgorithm };
 use rand::Rng;
 use std::cmp;
-use tcod::colors;
-use tcod::map::Map as FovMap;
 
-/// The width of the map in tiles
-pub const MAP_WIDTH: i32 = 80;
+const MAP_WIDTH: i32 = 80;
+const MAP_HEIGHT: i32 = 40;
 
-/// The height of the map in tiles
-pub const MAP_HEIGHT: i32 = 43;
-
-/// The maximum number of rooms that can appear on the map
-const MAX_ROOMS: i32 = 30;
-
-/// The minimum size for a room is 6x6
 const ROOM_MIN_SIZE: i32 = 6;
-
-/// The maximum size for a room is 10x10
 const ROOM_MAX_SIZE: i32 = 10;
+const MAX_ROOM_COUNT: i32 = 30;
 
-/// A map is a 2D array of Tiles
-pub type Map = Vec< Vec< Tile > >;
-
-/// Creates the TCOD FOV map from the given map
-pub fn create_fov_map(map: &Map, fov: &mut FovMap)
+pub struct Map
 {
-    for y in 0..MAP_HEIGHT
-    {
-        for x in 0..MAP_WIDTH
-        {
-            fov.set(x, y, !map[x as usize][y as usize].blocks_sight, !map[x as usize][y as usize].blocked);
-        }
-    }
+    pub tiles: Vec< Vec< Tile > >,
+    pub width: i32,
+    pub height: i32,
+    fov: FovMap
 }
 
-/// Generates a new map
-pub fn generate_map(entities: &mut Vec< Entity >, dungeon_level: i32) -> Map
+impl Map
 {
-    let mut map = vec![vec![Tile::wall(); MAP_HEIGHT as usize]; MAP_WIDTH as usize];
-    let mut rooms = vec![];
-
-    for _ in 0..MAX_ROOMS
+    pub fn new() -> Self
     {
-        let room_w = rand::thread_rng().gen_range(ROOM_MIN_SIZE, ROOM_MAX_SIZE + 1);
-        let room_h = rand::thread_rng().gen_range(ROOM_MIN_SIZE, ROOM_MAX_SIZE + 1);
-        let room_x = rand::thread_rng().gen_range(0, MAP_WIDTH - room_w);
-        let room_y = rand::thread_rng().gen_range(0, MAP_HEIGHT - room_h);
-        let new_room = Rect::new(room_x, room_y, room_w, room_h);
+        let mut map = Map {
+            tiles: vec![vec![Tile::empty(); MAP_HEIGHT as usize]; MAP_WIDTH as usize],
+            width: MAP_WIDTH,
+            height: MAP_HEIGHT,
+            fov: FovMap::new(MAP_WIDTH, MAP_HEIGHT)
+        };
+        map.generate_fov_map();
 
-        // We should only create the room if the new room doesn't intersect
-        // with any existing rooms
-        let can_create = !rooms.iter().any(|o| new_room.intersects_with(o));
-        if can_create
+        map
+    }
+
+    pub fn generate(&mut self) -> (i32, i32)
+    {
+        self.tiles = vec![vec![Tile::wall(); self.height as usize]; self.width as usize];
+        let mut rooms: Vec< Rect > = vec![];
+
+        // TODO: do something with starting position
+        let mut starting_pos = (0, 0);
+
+        for _ in 0..MAX_ROOM_COUNT
         {
-            generate_room(new_room, &mut map);
-            place_room_monsters(new_room, &mut map, entities, dungeon_level);
-            place_room_items(new_room, &mut map, entities, dungeon_level);
+            // Generate random size for room
+            let room_w = rand::thread_rng().gen_range(ROOM_MIN_SIZE, ROOM_MAX_SIZE + 1);
+            let room_h = rand::thread_rng().gen_range(ROOM_MIN_SIZE, ROOM_MAX_SIZE + 1);
 
-            let (c_x, c_y) = new_room.get_center();
-            if rooms.is_empty()
+            // Generate random position for room
+            let room_x = rand::thread_rng().gen_range(0, self.width - room_w);
+            let room_y = rand::thread_rng().gen_range(0, self.height - room_h);
+
+            // Create a new rect from the generated position and size
+            let new_room = Rect::new(room_x, room_y, room_w, room_h);
+
+            // Only create the room if the newly created one doesn't intersect with any other
+            let failed = rooms.iter().any(|o| new_room.intersects_with(o));
+            if !failed
             {
-                // set player position at center of first room
-                entities[PLAYER_ID].set_pos(c_x, c_y);
-            }
-            else
-            {
-                // Connect all rooms after the first with tunnels
-                let (prev_x, prev_y) = rooms[rooms.len() - 1].get_center();
-                if rand::random()
+                self.generate_room(&new_room);
+                let (new_x, new_y) = new_room.get_center();
+
+                if rooms.is_empty()
                 {
-                    generate_horizontal_tunnel(prev_x, c_x, prev_x, &mut map);
-                    generate_vertical_tunnel(prev_y, c_y, c_x, &mut map);
+                    starting_pos = (new_x, new_y);
                 }
                 else
                 {
-                    generate_vertical_tunnel(prev_y, c_y, prev_x, &mut map);
-                    generate_horizontal_tunnel(prev_x, c_x, c_y, &mut map);
+                    let (prev_x, prev_y) = rooms[rooms.len() - 1].get_center();
+                    if rand::random()
+                    {
+                        self.generate_horizontal_tunnel(prev_x, new_x, prev_y);
+                        self.generate_vertical_tunnel(prev_y, new_y, new_x);
+                    }
+                    else
+                    {
+                        self.generate_vertical_tunnel(prev_y, new_y, prev_x);
+                        self.generate_horizontal_tunnel(prev_x, new_x, new_y);
+                    }
+
+                    // TODO: finish this function
+                    self.populate_room(&new_room);
+                }
+
+                rooms.push(new_room);
+            }
+        }
+
+        // Generate stairs at center of last room
+        // TODO: this
+
+        self.generate_fov_map();
+
+        starting_pos
+    }
+
+    pub fn draw(&mut self, con: &mut Console)
+    {
+        for y in 0..MAP_HEIGHT
+        {
+            for x in 0..MAP_WIDTH
+            {
+                let visible = self.is_in_fov((x, y));
+                let wall = self.tiles[x as usize][y as usize].blocks_sight;
+                let color = match (visible, wall) 
+                {
+                    (false, false)  => colors::DARKEST_SEPIA,
+                    (false, true)   => colors::DARKEST_GREY,
+                    (true, false)   => colors::DARK_SEPIA,
+                    (true, true)    => colors::DARK_GREY
+                };
+
+                let explored = &mut self.tiles[x as usize][y as usize].explored;
+                if visible
+                {
+                    *explored = true;
+                }
+
+                if *explored
+                {
+                    con.set_char_background(x, y, color, BackgroundFlag::Set);
                 }
             }
-
-            rooms.push(new_room);
         }
     }
 
-    // Create stairs at center of last room
-    let (stair_x, stair_y) = rooms[rooms.len() - 1].get_center();
-    let mut stairs = Entity::new(stair_x, stair_y, 'H', colors::WHITE, "Stairs", false);
-    stairs.always_visible = true;
-    entities.push(stairs);
-
-    map
-}
-
-pub fn render_map(game: &mut Game)
-{
-}
-
-/// Used to generate a single room in the map by carving out a rectangle of empty tiles
-fn generate_room(room: Rect, map: &mut Map)
-{
-    for x in (room.x1 + 1)..room.x2
+    pub fn recompute_fov(&mut self, pos: (i32, i32))
     {
-        for y in (room.y1 + 1)..room.y2
+        self.fov.compute_fov(pos.0, pos.1, 10, true, FovAlgorithm::Basic);
+    }
+
+    pub fn is_in_fov(&self, pos: (i32, i32)) -> bool
+    {
+        self.fov.is_in_fov(pos.0, pos.1)
+    }
+
+    fn generate_fov_map(&mut self)
+    {
+        for y in 0..MAP_HEIGHT
         {
-            map[x as usize][y as usize] = Tile::empty();
+            for x in 0..MAP_WIDTH
+            {
+                self.fov.set(x, y, !self.tiles[x as usize][y as usize].blocks_sight, !self.tiles[x as usize][y as usize].blocked);
+            }
         }
     }
-}
 
-/// Used to generate a horizontal tunnel in the map
-fn generate_horizontal_tunnel(x1: i32, x2: i32, y: i32, map: &mut Map)
-{
-    for x in cmp::min(x1, x2)..(cmp::max(x1, x2) + 1)
+    fn generate_room(&mut self, room: &Rect)
     {
-        map[x as usize][y as usize] = Tile::empty();
+        for x in (room.x1 + 1)..room.x2
+        {
+            for y in (room.y1 + 1)..room.y2
+            {
+                self.tiles[x as usize][y as usize] = Tile::empty();
+            }
+        }
+    }
+
+    fn generate_horizontal_tunnel(&mut self, x1: i32, x2: i32, y: i32)
+    {
+        for x in cmp::min(x1, x2)..(cmp::max(x1, x2) + 1)
+        {
+            self.tiles[x as usize][y as usize] = Tile::empty();
+        }
+    }
+
+    fn generate_vertical_tunnel(&mut self, y1: i32, y2: i32, x: i32)
+    {
+        for y in cmp::min(y1, y2)..(cmp::max(y1, y2) + 1)
+        {
+            self.tiles[x as usize][y as usize] = Tile::empty();
+        }
+    }
+
+    fn populate_room(&mut self, room: &Rect)
+    {
+        // TODO: this
     }
 }
 
-/// Used to generate a vertical tunnel in the map
-fn generate_vertical_tunnel(y1: i32, y2: i32, x: i32, map: &mut Map)
-{
-    for y in cmp::min(y1, y2)..(cmp::max(y1, y2) + 1)
-    {
-        map[x as usize][y as usize] = Tile::empty();
-    }
-}
-
-fn place_room_monsters(room: Rect, map: &mut Map, entities: &mut Vec< Entity >, dungeon_level: i32)
-{
-}
-
-fn place_room_items(room: Rect, map: &mut Map, entities: &mut Vec< Entity >, dungeon_level: i32)
-{
-}
-
-/// Represents a single tile on the map and its properties
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy)]
 pub struct Tile
 {
     pub blocked: bool,
     pub blocks_sight: bool,
-    pub explored: bool
+    pub explored: bool,
 }
 
 impl Tile
@@ -152,7 +196,7 @@ impl Tile
         {
             blocked: false,
             blocks_sight: false,
-            explored: false
+            explored: false,
         }
     }
 
@@ -162,12 +206,11 @@ impl Tile
         {
             blocked: true,
             blocks_sight: true,
-            explored: false
+            explored: false,
         }
     }
 }
 
-/// A room on the map is simply represented by a rectangle
 #[derive(Debug, Clone, Copy)]
 struct Rect
 {
@@ -179,13 +222,17 @@ struct Rect
 
 impl Rect
 {
-    /// Create a new rectangle with given width and height at given position
     fn new(x: i32, y: i32, w: i32, h: i32) -> Self
     {
-        Rect { x1: x, y1: y, x2: x + w, y2: y + h }
+        Rect
+        {
+            x1: x,
+            y1: y,
+            x2: x + w,
+            y2: y + h
+        }
     }
 
-    /// Returns the center point (x, y) of the rect
     fn get_center(&self) -> (i32, i32)
     {
         let center_x = (self.x1 + self.x2) / 2;
@@ -194,16 +241,8 @@ impl Rect
         (center_x, center_y)
     }
 
-    /// Returns true if this rect intersects another rect
     fn intersects_with(&self, other: &Rect) -> bool
     {
         (self.x1 <= other.x2) && (self.x2 >= other.x1) && (self.y1 <= other.y2) && (self.y2 >= other.y1)
     }
-}
-
-/// Used for increasing difficulty with dungeon level
-struct Transition
-{
-    dungeon_level: i32,
-    value: i32
 }
