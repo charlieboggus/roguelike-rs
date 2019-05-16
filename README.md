@@ -5,12 +5,12 @@ TODO: screenshot
 
 ## Controls:
 
-|Game Action | Keybinding |
-|------------|:----------:|
-| Move player up | `w` |
-| Move player down | `s` |
-| Move player left | `a` |
-| Move player right | `d` |
+| Keybinding | Game Action |
+|:----------:|-------------|
+| `w` |Move player upwards |
+| `s` | Move player downwards |
+| `a` | Move player left |
+| `d` | Move player right |
 
 ## Requirements:
 - [Rust](https://www.rust-lang.org/en-US/install.html)
