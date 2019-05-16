@@ -3,7 +3,7 @@ A roguelike game written in Rust using [tcod-rs](https://github.com/tomassedovic
 
 TODO: screenshot
 
-### Controls:
+## Controls:
 
 |Game Action | Keybinding |
 |------------|:----------:|
@@ -12,13 +12,13 @@ TODO: screenshot
 | Move player left | `a` |
 | Move player right | `d` |
 
-### Requirements:
+## Requirements:
 - [Rust](https://www.rust-lang.org/en-US/install.html)
 - libsdl1.2-dev
 - libsdl2-dev
 
-### Building:
+## Building:
 TODO: This
 
-### License:
+## License:
 TODO: this
