@@ -1,5 +1,5 @@
 [package]
-name = "roguelike"
+name = "roguelike-rs"
 version = "0.1.0"
 authors = ["Charlie Boggus <charlie.boggus@gmail.com>"]
 edition = "2018"
