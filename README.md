@@ -6,7 +6,7 @@ TODO: screenshot
 ## Controls:
 
 | Keybinding | Game Action |
-|:----------:|-------------|
+|:----------:|:-----------:|
 | `w` |Move player upwards |
 | `s` | Move player downwards |
 | `a` | Move player left |
