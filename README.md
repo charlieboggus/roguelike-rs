@@ -2,7 +2,13 @@
 A roguelike game made with Rust using the tcod-rs library.
 
 # Controls:
-TODO: controls table
+
+|Game Action | Keybinding |
+|------------|:----------:|
+| Move player up | `w` |
+| Move player down | `s` |
+| Move player left | `a` |
+| Move player right | `d` |
 
 # License:
 TODO: this
