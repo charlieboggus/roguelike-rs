@@ -1,0 +1,6 @@
+/target
+**/*.rs.bk
+SDL2.dll
+SDL2.lib
+SDL2main.lib
+tcod.dll
