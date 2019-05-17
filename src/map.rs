@@ -1,3 +1,5 @@
+use crate::object::Object;
+
 use tcod::colors::{ self, Color };
 use tcod::console::{ Console, BackgroundFlag };
 use tcod::map::{ Map as FovMap, FovAlgorithm };
@@ -11,12 +13,15 @@ const ROOM_MIN_SIZE: i32 = 6;
 const ROOM_MAX_SIZE: i32 = 10;
 const MAX_ROOM_COUNT: i32 = 30;
 
+#[derive(Serialize, Deserialize)]
 pub struct Map
 {
     pub tiles: Vec< Vec< Tile > >,
     pub width: i32,
     pub height: i32,
-    fov: FovMap
+
+    #[serde(skip)]
+    fov_wrapper: FovWrapper
 }
 
 impl Map
@@ -27,20 +32,21 @@ impl Map
             tiles: vec![vec![Tile::empty(); MAP_HEIGHT as usize]; MAP_WIDTH as usize],
             width: MAP_WIDTH,
             height: MAP_HEIGHT,
-            fov: FovMap::new(MAP_WIDTH, MAP_HEIGHT)
+            fov_wrapper: FovWrapper::new()
         };
         map.generate_fov_map();
 
         map
     }
 
-    pub fn generate(&mut self) -> (i32, i32)
+    pub fn generate(&mut self, objects: &mut Vec< Object >, dungeon_level: i32) -> (i32, i32)
     {
         self.tiles = vec![vec![Tile::wall(); self.height as usize]; self.width as usize];
         let mut rooms: Vec< Rect > = vec![];
-
-        // TODO: do something with starting position
         let mut starting_pos = (0, 0);
+
+        // Remove everything except player from objects vec when generating a new map
+        objects.truncate(1);
 
         for _ in 0..MAX_ROOM_COUNT
         {
@@ -80,8 +86,7 @@ impl Map
                         self.generate_horizontal_tunnel(prev_x, new_x, new_y);
                     }
 
-                    // TODO: finish this function
-                    self.populate_room(&new_room);
+                    self.populate_room(&new_room, objects, dungeon_level);
                 }
 
                 rooms.push(new_room);
@@ -89,7 +94,10 @@ impl Map
         }
 
         // Generate stairs at center of last room
-        // TODO: this
+        let (stair_x, stair_y) = rooms[rooms.len() - 1].get_center();
+        let mut stairs = Object::new(stair_x, stair_y, 'H', colors::WHITE, "Stairs", false);
+        stairs.always_visible = true;
+        objects.push(stairs);
 
         self.generate_fov_map();
 
@@ -126,25 +134,34 @@ impl Map
         }
     }
 
-    pub fn recompute_fov(&mut self, pos: (i32, i32))
-    {
-        self.fov.compute_fov(pos.0, pos.1, 10, true, FovAlgorithm::Basic);
-    }
-
-    pub fn is_in_fov(&self, pos: (i32, i32)) -> bool
-    {
-        self.fov.is_in_fov(pos.0, pos.1)
-    }
-
-    fn generate_fov_map(&mut self)
+    pub fn generate_fov_map(&mut self)
     {
         for y in 0..MAP_HEIGHT
         {
             for x in 0..MAP_WIDTH
             {
-                self.fov.set(x, y, !self.tiles[x as usize][y as usize].blocks_sight, !self.tiles[x as usize][y as usize].blocked);
+                self.fov_wrapper.fov.set(x, y, !self.tiles[x as usize][y as usize].blocks_sight, !self.tiles[x as usize][y as usize].blocked);
             }
         }
+    }
+
+    pub fn recompute_fov(&mut self, pos: (i32, i32))
+    {
+        self.fov_wrapper.fov.compute_fov(pos.0, pos.1, 10, true, FovAlgorithm::Basic);
+    }
+
+    pub fn is_in_fov(&self, pos: (i32, i32)) -> bool
+    {
+        self.fov_wrapper.fov.is_in_fov(pos.0, pos.1)
+    }
+
+    pub fn is_blocked(&self, x: i32, y: i32, objects: &[Object]) -> bool
+    {
+        if self.tiles[x as usize][y as usize].blocked
+        {
+            return true;
+        }
+        objects.iter().any(|o| { o.solid && o.pos.0 == x && o.pos.1 == y })
     }
 
     fn generate_room(&mut self, room: &Rect)
@@ -174,13 +191,13 @@ impl Map
         }
     }
 
-    fn populate_room(&mut self, room: &Rect)
+    fn populate_room(&mut self, room: &Rect, objects: &mut Vec< Object >, dungeon_level: i32)
     {
         // TODO: this
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Tile
 {
     pub blocked: bool,
@@ -245,4 +262,23 @@ impl Rect
     {
         (self.x1 <= other.x2) && (self.x2 >= other.x1) && (self.y1 <= other.y2) && (self.y2 >= other.y1)
     }
+}
+
+/// Wrapper for tcod::map::Map so that I can implement Default trait for it...
+struct FovWrapper
+{
+    fov: FovMap
+}
+
+impl FovWrapper
+{
+    fn new() -> Self
+    {
+        FovWrapper { fov: FovMap::new(MAP_WIDTH, MAP_HEIGHT) }
+    }
+}
+
+impl Default for FovWrapper
+{
+    fn default() -> Self { FovWrapper::new() }
 }

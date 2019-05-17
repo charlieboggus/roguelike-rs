@@ -5,9 +5,13 @@ extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
 
+mod game;
 mod map;
 mod object;
+mod menu;
 
+use crate::map::Map;
+use crate::object::Object;
 use tcod::console::*;
 
 pub const SCREEN_WIDTH: i32 = 80;
@@ -23,8 +27,10 @@ fn main()
         .init();
     tcod::system::set_fps(FPS_LIMIT);
 
-    let mut map = map::Map::new();
-    let pos = map.generate();
+    let mut objects: Vec< Object > = vec![];
+
+    let mut map = Map::new();
+    let pos = map.generate(&mut objects, 1);
 
     root.clear();
     map.recompute_fov(pos);
