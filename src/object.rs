@@ -1,4 +1,8 @@
 use crate::map::Map;
+use crate::game::Game;
+use crate::fighter::Fighter;
+use crate::ai::Ai;
+
 use tcod::colors::Color;
 use tcod::console::{ Console, BackgroundFlag };
 use std::cmp;
@@ -14,6 +18,8 @@ pub struct Object
     pub solid: bool,
     pub always_visible: bool,
     pub level: i32,
+    pub fighter: Option< Fighter >,
+    pub ai: Option< Ai >,
 }
 
 impl Object
@@ -30,6 +36,8 @@ impl Object
             solid: solid,
             always_visible: false,
             level: 1,
+            fighter: None,
+            ai: None,
         }
     }
 
@@ -42,27 +50,6 @@ impl Object
     pub fn set_pos(&mut self, x: i32, y: i32)
     {
         self.pos = (x, y)
-    }
-
-    pub fn move_by(&mut self, dx: i32, dy: i32, map: &Map, objects: &[Object])
-    {
-        let (x, y) = self.pos;
-        if !map.is_blocked(x + dx, y + dy, objects)
-        {
-            self.pos = (x + dx, y + dy);
-        }
-    }
-
-    pub fn move_towards(&mut self, target_x: i32, target_y: i32, map: &Map, objects: &[Object])
-    {
-        let dx = target_x - self.pos.0;
-        let dy = target_y - self.pos.1;
-        let dist = ((dx.pow(2) + dy.pow(2)) as f32).sqrt();
-
-        let dx = (dx as f32 / dist).round() as i32;
-        let dy = (dy as f32 / dist).round() as i32;
-
-        self.move_by(dx, dy, map, objects);
     }
 
     pub fn distance_to(&self, other: &Object) -> f32 
@@ -78,9 +65,30 @@ impl Object
     }
 }
 
+pub fn move_by(id: usize, dx: i32, dy: i32, game: &mut Game)
+{
+    let (x, y) = game.objects[id].pos;
+    if !game.map.is_blocked(x + dx, y + dy, &game.objects)
+    {
+        game.objects[id].set_pos(x + dx, y + dy);
+    }
+}
+
+pub fn move_towards(id: usize, target_x: i32, target_y: i32, game: &mut Game)
+{
+    let dx = target_x - game.objects[id].pos.0;
+    let dy = target_y - game.objects[id].pos.1;
+    let dist = ((dx.pow(2) + dy.pow(2)) as f32).sqrt();
+
+    let dx = (dx as f32 / dist).round() as i32;
+    let dy = (dy as f32 / dist).round() as i32;
+
+    move_by(id, dx, dy, game);
+}
+
 /// Mutably borrow two *separate* elements from the given slice.
 /// Panics when the indexes are equal or out of bounds.
-fn mut_two<T>(first_index: usize, second_index: usize, items: &mut [T]) -> (&mut T, &mut T) 
+pub fn mut_two< T >(first_index: usize, second_index: usize, items: &mut [T]) -> (&mut T, &mut T) 
 {
     assert!(first_index != second_index);
     let split_at_index = cmp::max(first_index, second_index);

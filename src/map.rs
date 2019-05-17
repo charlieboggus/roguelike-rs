@@ -1,4 +1,5 @@
 use crate::object::Object;
+use crate::game::PLAYER_ID;
 
 use tcod::colors::{ self, Color };
 use tcod::console::{ Console, BackgroundFlag };
@@ -6,8 +7,8 @@ use tcod::map::{ Map as FovMap, FovAlgorithm };
 use rand::Rng;
 use std::cmp;
 
-const MAP_WIDTH: i32 = 80;
-const MAP_HEIGHT: i32 = 40;
+pub const MAP_WIDTH: i32 = 80;
+pub const MAP_HEIGHT: i32 = 40;
 
 const ROOM_MIN_SIZE: i32 = 6;
 const ROOM_MAX_SIZE: i32 = 10;
@@ -39,12 +40,11 @@ impl Map
         map
     }
 
-    pub fn generate(&mut self, objects: &mut Vec< Object >, dungeon_level: i32) -> (i32, i32)
+    pub fn generate(&mut self, objects: &mut Vec< Object >, dungeon_level: i32)
     {
         self.tiles = vec![vec![Tile::wall(); self.height as usize]; self.width as usize];
         let mut rooms: Vec< Rect > = vec![];
-        let mut starting_pos = (0, 0);
-
+        
         // Remove everything except player from objects vec when generating a new map
         objects.truncate(1);
 
@@ -70,10 +70,12 @@ impl Map
 
                 if rooms.is_empty()
                 {
-                    starting_pos = (new_x, new_y);
+                    // Position player in center of first room
+                    objects[PLAYER_ID].pos = (new_x, new_y);
                 }
                 else
                 {
+                    // Connect all the rooms after first with tunnels & put stuff in em
                     let (prev_x, prev_y) = rooms[rooms.len() - 1].get_center();
                     if rand::random()
                     {
@@ -100,8 +102,6 @@ impl Map
         objects.push(stairs);
 
         self.generate_fov_map();
-
-        starting_pos
     }
 
     pub fn draw(&mut self, con: &mut Console)
@@ -162,6 +162,11 @@ impl Map
             return true;
         }
         objects.iter().any(|o| { o.solid && o.pos.0 == x && o.pos.1 == y })
+    }
+
+    pub fn is_explored(&self, pos: (i32, i32)) -> bool
+    {
+        self.tiles[pos.0 as usize][pos.1 as usize].explored
     }
 
     fn generate_room(&mut self, room: &Rect)

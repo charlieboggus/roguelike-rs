@@ -8,33 +8,47 @@ extern crate serde_derive;
 mod game;
 mod map;
 mod object;
+mod fighter;
+mod ai;
 mod menu;
+mod gui;
 
-use crate::map::Map;
-use crate::object::Object;
+use crate::map::{ MAP_WIDTH, MAP_HEIGHT };
+use crate::gui::PANEL_HEIGHT;
+
 use tcod::console::*;
+use tcod::input::Mouse;
 
 pub const SCREEN_WIDTH: i32 = 80;
 pub const SCREEN_HEIGHT: i32 = 50;
-const FPS_LIMIT: i32 = 60;
+const FPS_LIMIT: i32 = 20;
+
+pub struct TCOD
+{
+    pub root: Root,
+    pub con: Offscreen,
+    pub gui: Offscreen,
+    pub mouse: Mouse
+}
 
 fn main() 
 {
     // Initialize the root console
-    let mut root = Root::initializer()
+    let root = Root::initializer()
         .size(SCREEN_WIDTH, SCREEN_HEIGHT)
         .title("roguelike-rs")
         .init();
     tcod::system::set_fps(FPS_LIMIT);
 
-    let mut objects: Vec< Object > = vec![];
+    // Initialize core tcod stuff
+    let mut tcod = TCOD
+    {
+        root: root,
+        con: Offscreen::new(MAP_WIDTH, MAP_HEIGHT),
+        gui: Offscreen::new(SCREEN_WIDTH, PANEL_HEIGHT),
+        mouse: Default::default()
+    };
 
-    let mut map = Map::new();
-    let pos = map.generate(&mut objects, 1);
-
-    root.clear();
-    map.recompute_fov(pos);
-    map.draw(&mut root);
-    root.flush();
-    root.wait_for_keypress(true);
+    // Show main menu
+    menu::main_menu(&mut tcod);
 }
