@@ -1,5 +1,7 @@
 use crate::{ TCOD, SCREEN_WIDTH, SCREEN_HEIGHT };
-use crate::game::{ self, Game };
+use crate::game::{ self, Game, LEVEL_UP_BASE, LEVEL_UP_FACTOR, PLAYER_ID };
+use crate::object::Object;
+use crate::fighter::Fighter;
 
 use tcod::colors::{ self, Color };
 use tcod::console::*;
@@ -62,6 +64,89 @@ pub fn main_menu(tcod: &mut TCOD)
             _ => {}
         }
     }
+}
+
+pub fn character_menu(game: &Game, root: &mut Root)
+{
+    let player = &game.objects[PLAYER_ID];
+    let xp_to_level = LEVEL_UP_BASE  + player.level * LEVEL_UP_FACTOR;
+    if let Some(fighter) = player.fighter.as_ref()
+    {
+        let msg = format!("
+        Character Information:\n\n
+        HP: {}/{}\n
+        XP: {}/{}\n
+        Level: {}\n\n
+        > Vitality: {} ({})\n
+        > Attack: {} ({})\n
+        > Strength: {} ({})\n
+        > Defense: {} ({})\n
+        > Intelligence: {} ({})\n
+        > Luck: {} ({})\n
+        ", 
+        fighter.hp, fighter.max_hp, fighter.xp, xp_to_level, player.level, 
+        fighter.base_vit, player.vitality_value(game),
+        fighter.base_atk, player.attack_value(game),
+        fighter.base_str, player.strength_value(game),
+        fighter.base_def, player.defense_value(game),
+        fighter.base_int, player.intelligence_value(game),
+        fighter.base_lck, player.luck_value(game));
+
+        msg_box(&msg, CHARACTER_MENU_WIDTH, root);
+    }
+}
+
+pub fn inventory_menu(inv: &[Object], header: &str, root: &mut Root) -> Option< usize >
+{
+    let opts: Vec< String > = if inv.len() == 0
+    {
+        vec!["Inventory is empty...".into()]
+    }
+    else
+    {
+        inv.iter().map(|i| {
+            match i.equipment
+            {
+                Some(equipment) if equipment.equipped =>
+                {
+                    format!("{} (equipped on {:?}", i.name, equipment.slot)
+                }
+
+                _ => i.name.clone()
+            }
+        }).collect()
+    };
+
+    let choice = menu(header, &opts, INVENTORY_MENU_WIDTH, colors::DARKEST_BLUE, 1.0, root);
+
+    if inv.len() > 0
+    {
+        choice
+    }
+    else
+    {
+        None
+    }
+}
+
+pub fn level_up_menu(fighter: &Fighter, header: &str, root: &mut Root) -> Option< usize >
+{
+    let opts = &[
+        format!("+1 Vitality        ({} -> {})", fighter.base_vit, fighter.base_vit + 1),
+        format!("+1 Attack          ({} -> {})", fighter.base_atk, fighter.base_atk + 1),
+        format!("+1 Strength        ({} -> {})", fighter.base_str, fighter.base_str + 1),
+        format!("+1 Defense         ({} -> {})", fighter.base_def, fighter.base_def + 1),
+        format!("+1 Intelligence    ({} -> {})", fighter.base_int, fighter.base_int + 1),
+        format!("+1 Luck            ({} -> {})", fighter.base_lck, fighter.base_lck + 1)
+    ];
+
+    let mut choice = None;
+    while choice.is_none()
+    {
+        choice = menu(header, opts, LEVEL_UP_MENU_WIDTH, colors::DARK_BLUE, 1.0, root);
+    }
+
+    choice
 }
 
 fn menu< T: AsRef< str > >(header: &str, opts: &[T], width: i32, background_color: Color, background_alpha: f32, root: &mut Root) -> Option< usize >

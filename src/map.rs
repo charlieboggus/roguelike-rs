@@ -1,10 +1,13 @@
 use crate::object::Object;
 use crate::game::PLAYER_ID;
+use crate::fighter::{ Fighter, DeathCallback };
+use crate::ai::Ai;
 
-use tcod::colors::{ self, Color };
+use tcod::colors;
+use tcod::chars;
 use tcod::console::{ Console, BackgroundFlag };
 use tcod::map::{ Map as FovMap, FovAlgorithm };
-use rand::Rng;
+use rand::{ Rng, distributions::WeightedIndex, prelude::* };
 use std::cmp;
 
 pub const MAP_WIDTH: i32 = 80;
@@ -198,8 +201,63 @@ impl Map
 
     fn populate_room(&mut self, room: &Rect, objects: &mut Vec< Object >, dungeon_level: i32)
     {
-        // TODO: this
+        // Monster generation stuff
+        let max_monsters = from_dungeon_level(&[Transition { level: 1, value: 2 }, Transition { level: 4, value: 6 }, Transition { level: 8, value: 10 }], dungeon_level);
+        let num_monsters = rand::thread_rng().gen_range(0, max_monsters + 1);
+
+        let monster_choices = ["Orc", "Troll"];
+        let monster_weights = [80, from_dungeon_level(&[Transition { level: 3, value: 15 }, Transition { level: 5, value: 30 }, Transition { level: 8, value: 50 }], dungeon_level)];
+        let monster_dist = WeightedIndex::new(&monster_weights).unwrap();
+
+        for _ in 0..num_monsters
+        {
+            let x = rand::thread_rng().gen_range(room.x1 + 1, room.x2);
+            let y = rand::thread_rng().gen_range(room.y1 + 1, room.y2);
+
+            if !self.is_blocked(x, y, objects)
+            {
+                let mut monster = match monster_choices[monster_dist.sample(&mut rand::thread_rng())]
+                {
+                    "Orc" => {
+                        let mut orc = Object::new(x, y, 'O', colors::DESATURATED_GREEN, "Orc", true);
+                        orc.fighter = Some(Fighter::new(10, 10, 10, 10, 10, 10, 50, DeathCallback::MonsterDeath));
+                        orc.ai = Some(Ai::BasicMonster);
+                        orc
+                    },
+
+                    "Troll" => {
+                        let mut troll = Object::new(x, y, 'T', colors::DARKER_GREEN, "Troll", true);
+                        troll.fighter = Some(Fighter::new(10, 10, 10, 10, 10, 10, 100, DeathCallback::MonsterDeath));
+                        troll.ai = Some(Ai::BasicMonster);
+                        troll
+                    },
+
+                    _ => unreachable!()
+                };
+
+                monster.alive = true;
+                objects.push(monster);
+            }
+        }
+
+        // Item generation stuff
+        let max_items = 0;
+        let num_items = rand::thread_rng().gen_range(0, max_items + 1);
+        for _ in 0..num_items
+        {
+            let x = rand::thread_rng().gen_range(room.x1 + 1, room.x2);
+            let y = rand::thread_rng().gen_range(room.y1 + 1, room.y2);
+
+            if !self.is_blocked(x, y, objects)
+            {
+            }
+        }
     }
+}
+
+fn from_dungeon_level(table: &[Transition], level: i32) -> i32
+{
+    table.iter().rev().find(|t| level >= t.level).map_or(0, |t| t.value)
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -286,4 +344,10 @@ impl FovWrapper
 impl Default for FovWrapper
 {
     fn default() -> Self { FovWrapper::new() }
+}
+
+struct Transition
+{
+    level: i32,
+    value: i32
 }

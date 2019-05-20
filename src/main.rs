@@ -10,6 +10,7 @@ mod map;
 mod object;
 mod fighter;
 mod ai;
+mod item;
 mod menu;
 mod gui;
 

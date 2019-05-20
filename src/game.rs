@@ -2,14 +2,15 @@ use crate::TCOD;
 use crate::map::{ Map, MAP_WIDTH, MAP_HEIGHT };
 use crate::object::{ self, Object };
 use crate::fighter::{ Fighter, DeathCallback };
+use crate::item;
 use crate::ai::{ self, Ai };
+use crate::menu;
 use crate::gui::{ self, * };
 
 use tcod::colors;
 use tcod::console::*;
 use tcod::input::{ Key, KeyCode, Event };
 
-use std::cmp;
 use std::error::Error;
 use std::fs::File;
 use std::io::{ Read, Write };
@@ -46,24 +47,10 @@ impl Game
     pub fn new() -> Self
     {
         // Create player
-        // TODO: character creation to determine player name?
+        // TODO: character creation to determine player name and stats?
         let mut player = Object::new(0, 0, '@', colors::WHITE, "Player", true);
         player.alive = true;
-        player.fighter = Some(Fighter { 
-            // TODO: character creation to determine this?
-            base_vit: 10,
-            base_atk: 10,
-            base_str: 10,
-            base_def: 10,
-            base_int: 10,
-            base_lck: 10,
-
-            max_hp: 30,
-            hp: 30,
-            xp: 0,
-
-            on_death: DeathCallback::PlayerDeath
-        });
+        player.fighter = Some(Fighter::new(1, 1, 1, 1, 1, 1, 0, DeathCallback::PlayerDeath));
 
         // Create objects vec
         let mut objects = vec![ player ];
@@ -192,20 +179,65 @@ impl Game
 
             // F to interact with item or non-monster object with
             // TODO: this
-            (Key { printable: 'f', .. }, true) => { PlayerAction::NoAction },
+            (Key { printable: 'f', .. }, true) => 
+            {
+                // first check if the object is an item
+                let item_id = self.objects.iter().position(|o| o.pos == self.objects[PLAYER_ID].pos && o.item.is_some());
+                if let Some(item_id) = item_id
+                {
+                    item::pick_item_up(item_id, self);
+                    return PlayerAction::NoAction;
+                }
+
+                // Next check if it's stairs
+                let player_on_stairs = self.objects.iter().any(|o| { o.pos == self.objects[PLAYER_ID].pos && o.name == "Stairs" });
+                if player_on_stairs
+                {
+                    advance_dungeon_level(self);
+                    return PlayerAction::NoAction;
+                }
+
+                PlayerAction::NoAction 
+            },
 
             // E to interact with monster (melee attack)
             // TODO: this
-            (Key { printable: 'e', .. }, true) => { PlayerAction::Action },
+            (Key { printable: 'e', .. }, true) => 
+            {
+                PlayerAction::Action 
+            },
 
             // I to open inventory
-            // TODO: this
-            (Key { printable: 'i', .. }, true) => { PlayerAction::NoAction },
+            (Key { printable: 'i', .. }, true) => 
+            {
+                let inv_index = menu::inventory_menu(&self.inventory, "Press the key next to an item to use it, or any other to cancel.\n", &mut tcod.root);
+                if let Some(inv_index) = inv_index
+                {
+                    item::use_item(inv_index, self, tcod);
+                }
+
+                PlayerAction::NoAction 
+            },
+
+            // O to open inventory in drop mode
+            (Key { printable: 'o', .. }, true) =>
+            {
+                let inv_index = menu::inventory_menu(&self.inventory, "Press the key next to an item to drop it, or any other key to cancel.\n", &mut tcod.root);
+                if let Some(inv_index) = inv_index
+                {
+                    item::drop_item(inv_index, self);
+                }
+                PlayerAction::NoAction
+            },
 
             // C to open character info 
-            // TODO: this
-            (Key { printable: 'o', .. }, true) => { PlayerAction::NoAction },
+            (Key { printable: 'c', .. }, true) => 
+            { 
+                menu::character_menu(self, &mut tcod.root);
+                PlayerAction::NoAction 
+            },
 
+            // No other controls at this time...
             _ => PlayerAction::NoAction
         }
     }
@@ -242,9 +274,34 @@ fn player_level_up(tcod: &mut TCOD, game: &mut Game)
         game.log.add(format!("Your battle skills grow stronger! You've reached level {}!", player.level), colors::YELLOW);
 
         let fighter = player.fighter.as_mut().unwrap();
-        
-        // TODO: level up menu
+        let stat = menu::level_up_menu(fighter, "Choose a stat to increase:", &mut tcod.root);
+        match stat.unwrap()
+        {
+            // Vitality
+            0 => {
+                fighter.base_vit += 1;
+                fighter.max_hp = 10 + (5 * fighter.base_vit);
+            },
 
+            // Attack
+            1 => fighter.base_atk += 1,
+
+            // Strength
+            2 => fighter.base_str += 1,
+
+            // Defense
+            3 => fighter.base_def += 1,
+
+            // Intelligence
+            4 => fighter.base_int += 1,
+
+            // Luck
+            5 => fighter.base_lck += 1,
+
+            _ => unreachable!()
+        }
+
+        fighter.hp = fighter.max_hp;
         fighter.xp -= level_xp;
     }
 }
@@ -261,4 +318,18 @@ fn ai_take_turn(id: usize, game: &mut Game)
 
         game.objects[id].ai = Some(new_ai);
     }
+}
+
+/// Advances the dungeon level
+fn advance_dungeon_level(game: &mut Game)
+{
+    // Heal player up by half their max hp
+    game.log.add("You take a moment to rest and recover your strength.", colors::VIOLET);
+    let heal_amt = game.objects[PLAYER_ID].fighter.map_or(0, |f| f.max_hp / 2);
+    game.objects[PLAYER_ID].heal(heal_amt);
+
+    // Create the new dungeon level
+    game.log.add("You descend deeper into the heart of the dungeon...", colors::RED);
+    game.dungeon_level += 1;
+    game.map.generate(&mut game.objects, game.dungeon_level);
 }
