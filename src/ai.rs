@@ -19,7 +19,8 @@ pub fn ai_basic_monster(id: usize, game: &mut Game) -> Ai
         }
         else if game.objects[PLAYER_ID].fighter.map_or(false, |f| f.hp > 0)
         {
-            // attack
+            let (monster, player) = object::mut_two(id, PLAYER_ID, &mut game.objects);
+            monster.attack(player, &game.inventory, &mut game.log);
         }
     }
 

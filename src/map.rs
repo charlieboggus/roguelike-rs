@@ -2,6 +2,7 @@ use crate::object::Object;
 use crate::game::PLAYER_ID;
 use crate::fighter::{ Fighter, DeathCallback };
 use crate::ai::Ai;
+use crate::item::*;
 
 use tcod::colors;
 use tcod::chars;
@@ -17,19 +18,28 @@ const ROOM_MIN_SIZE: i32 = 6;
 const ROOM_MAX_SIZE: i32 = 10;
 const MAX_ROOM_COUNT: i32 = 30;
 
+/// Represents the game map and all of its associated fields.
 #[derive(Serialize, Deserialize)]
 pub struct Map
 {
+    /// A map is simply comprised of a 2D array of Tiles
     pub tiles: Vec< Vec< Tile > >,
+
+    /// The width of the map
     pub width: i32,
+
+    /// The height of the map
     pub height: i32,
 
+    /// The map's FOV map
     #[serde(skip)]
     fov_wrapper: FovWrapper
 }
 
 impl Map
 {
+    /// Creates a new instance of the map. Does not generate the map, however.
+    /// Simply initializes all of the map fields.
     pub fn new() -> Self
     {
         let mut map = Map {
@@ -43,6 +53,7 @@ impl Map
         map
     }
 
+    /// Function to generate the map
     pub fn generate(&mut self, objects: &mut Vec< Object >, dungeon_level: i32)
     {
         self.tiles = vec![vec![Tile::wall(); self.height as usize]; self.width as usize];
@@ -107,11 +118,12 @@ impl Map
         self.generate_fov_map();
     }
 
+    /// Draws the map to the given TCOD console
     pub fn draw(&mut self, con: &mut Console)
     {
-        for y in 0..MAP_HEIGHT
+        for y in 0..self.height
         {
-            for x in 0..MAP_WIDTH
+            for x in 0..self.width
             {
                 let visible = self.is_in_fov((x, y));
                 let wall = self.tiles[x as usize][y as usize].blocks_sight;
@@ -137,27 +149,31 @@ impl Map
         }
     }
 
+    /// Creates the FOV map
     pub fn generate_fov_map(&mut self)
     {
-        for y in 0..MAP_HEIGHT
+        for y in 0..self.height
         {
-            for x in 0..MAP_WIDTH
+            for x in 0..self.width
             {
                 self.fov_wrapper.fov.set(x, y, !self.tiles[x as usize][y as usize].blocks_sight, !self.tiles[x as usize][y as usize].blocked);
             }
         }
     }
 
+    /// Recomputes the player's FOV
     pub fn recompute_fov(&mut self, pos: (i32, i32))
     {
         self.fov_wrapper.fov.compute_fov(pos.0, pos.1, 10, true, FovAlgorithm::Basic);
     }
 
+    /// Returns true if the given position is in the player's FOV
     pub fn is_in_fov(&self, pos: (i32, i32)) -> bool
     {
         self.fov_wrapper.fov.is_in_fov(pos.0, pos.1)
     }
 
+    /// Returns true if the tile at the given position is blocked (either a wall or occupied)
     pub fn is_blocked(&self, x: i32, y: i32, objects: &[Object]) -> bool
     {
         if self.tiles[x as usize][y as usize].blocked
@@ -167,11 +183,14 @@ impl Map
         objects.iter().any(|o| { o.solid && o.pos.0 == x && o.pos.1 == y })
     }
 
+    /// Returns true if the tile at the given position has been explored
     pub fn is_explored(&self, pos: (i32, i32)) -> bool
     {
         self.tiles[pos.0 as usize][pos.1 as usize].explored
     }
 
+    /// Function to carve out a room on the map using the position and size 
+    /// of the given rect
     fn generate_room(&mut self, room: &Rect)
     {
         for x in (room.x1 + 1)..room.x2
@@ -183,6 +202,7 @@ impl Map
         }
     }
 
+    /// Function to carve out a horizontal tunnel on the map to connect two rooms
     fn generate_horizontal_tunnel(&mut self, x1: i32, x2: i32, y: i32)
     {
         for x in cmp::min(x1, x2)..(cmp::max(x1, x2) + 1)
@@ -191,6 +211,7 @@ impl Map
         }
     }
 
+    /// Function to carve out a vertical tunnel on the map to connect two rooms
     fn generate_vertical_tunnel(&mut self, y1: i32, y2: i32, x: i32)
     {
         for y in cmp::min(y1, y2)..(cmp::max(y1, y2) + 1)
@@ -199,35 +220,67 @@ impl Map
         }
     }
 
+    /// Function to spawn monsters and items in the given room
     fn populate_room(&mut self, room: &Rect, objects: &mut Vec< Object >, dungeon_level: i32)
     {
-        // Monster generation stuff
-        let max_monsters = from_dungeon_level(&[Transition { level: 1, value: 2 }, Transition { level: 4, value: 6 }, Transition { level: 8, value: 10 }], dungeon_level);
+        // Maximum number of monsters that can spawn in a room is determined by dungeon level
+        let max_monsters = from_dungeon_level(&[
+            Transition { level: 1, value: 2 },  // Levels 1-3: 2 monsters max per room 
+            Transition { level: 4, value: 4 },  // Levels 4-7: 4 monsters max per room
+            Transition { level: 8, value: 5 }], // Levels 8+:  5 monsters max per room
+            dungeon_level
+        );
+
+        // Number of monsters in the room is a random number [0, max]
         let num_monsters = rand::thread_rng().gen_range(0, max_monsters + 1);
 
-        let monster_choices = ["Orc", "Troll"];
-        let monster_weights = [80, from_dungeon_level(&[Transition { level: 3, value: 15 }, Transition { level: 5, value: 30 }, Transition { level: 8, value: 50 }], dungeon_level)];
+        // The different types of monsters that can spawn
+        let monster_choices = [
+            "Orc", 
+            "Troll"
+        ];
+
+        // The weighted probabilities for each type of monster to spawn
+        let monster_weights = [
+            // Orc monster weight
+            80, 
+
+            // Troll Monster weight
+            from_dungeon_level(&[
+                Transition { level: 3, value: 15 }, 
+                Transition { level: 5, value: 30 }, 
+                Transition { level: 8, value: 50 }], 
+                dungeon_level
+            )
+        ];
+
+        // Distribution using weighted index sampling to determine the type of
+        // monster that is spawned
         let monster_dist = WeightedIndex::new(&monster_weights).unwrap();
 
         for _ in 0..num_monsters
         {
+            // Generate random position for monster
             let x = rand::thread_rng().gen_range(room.x1 + 1, room.x2);
             let y = rand::thread_rng().gen_range(room.y1 + 1, room.y2);
 
             if !self.is_blocked(x, y, objects)
             {
+                // Generate a monster based off of the weighted sample from our monster distribution
                 let mut monster = match monster_choices[monster_dist.sample(&mut rand::thread_rng())]
                 {
-                    "Orc" => {
+                    "Orc" => 
+                    {
                         let mut orc = Object::new(x, y, 'O', colors::DESATURATED_GREEN, "Orc", true);
-                        orc.fighter = Some(Fighter::new(10, 10, 10, 10, 10, 10, 50, DeathCallback::MonsterDeath));
+                        orc.fighter = Some(Fighter::new(2, 3, 2, 3, 2, 0, 0, 50, DeathCallback::MonsterDeath));
                         orc.ai = Some(Ai::BasicMonster);
                         orc
                     },
 
-                    "Troll" => {
+                    "Troll" => 
+                    {
                         let mut troll = Object::new(x, y, 'T', colors::DARKER_GREEN, "Troll", true);
-                        troll.fighter = Some(Fighter::new(10, 10, 10, 10, 10, 10, 100, DeathCallback::MonsterDeath));
+                        troll.fighter = Some(Fighter::new(5, 5, 5, 3, 3, 0, 0, 100, DeathCallback::MonsterDeath));
                         troll.ai = Some(Ai::BasicMonster);
                         troll
                     },
@@ -240,36 +293,146 @@ impl Map
             }
         }
 
-        // Item generation stuff
-        let max_items = 0;
+        // Maximum number of items per room is determined by the dungeon level
+        let max_items = from_dungeon_level(&[
+            Transition { level: 1, value: 1 }, // Levels 1-4: 1 item max per room
+            Transition { level: 5, value: 2 }, // Levels 5+:  2 item max per room
+            ], 
+            dungeon_level
+        );
+
+        // Generate number of items in the room [0, max]
         let num_items = rand::thread_rng().gen_range(0, max_items + 1);
+
+        // The possible items that can be spawned
+        let item_choices = [ 
+            Item::HealthPotion, 
+            Item::Sword, 
+            Item::Shield, 
+            Item::PlateArmor 
+        ];
+
+        // The weights for each different type of item to spawn
+        let item_weights = [
+            // Health potion weight
+            35,
+
+            // Sword weight
+            from_dungeon_level(&[Transition{ level: 4, value: 25 }], dungeon_level),
+
+            // Shield weight
+            from_dungeon_level(&[Transition{ level: 5, value: 20 }], dungeon_level),
+
+            // Plate Armor weight
+            from_dungeon_level(&[Transition{ level: 3, value: 15 }], dungeon_level),
+        ];
+
+        // Distribution using weighted index sampling to determine the type of
+        // item that is spawned
+        let item_dist = WeightedIndex::new(&item_weights).unwrap();
+
         for _ in 0..num_items
         {
+            // Generate a random position in the room for the item
             let x = rand::thread_rng().gen_range(room.x1 + 1, room.x2);
             let y = rand::thread_rng().gen_range(room.y1 + 1, room.y2);
 
             if !self.is_blocked(x, y, objects)
             {
+                let mut item = match item_choices[item_dist.sample(&mut rand::thread_rng())]
+                {
+                    Item::HealthPotion =>
+                    {
+                        let mut item = Object::new(x, y, '!', colors::LIGHT_VIOLET, "Health Potion", false);
+                        item.item = Some(Item::HealthPotion);
+                        item
+                    },
+
+                    Item::Sword =>
+                    {
+                        // TODO: figure out different tiers of sword
+                        let mut item = Object::new(x, y, '/', colors::BRASS, "Sword", false);
+                        item.item = Some(Item::Sword);
+                        item.equipment = Some(Equipment {
+                            slot: EquipmentSlot::RightHand,
+                            equipped: false,
+                            vit_bonus: 0,
+                            atk_bonus: 2,
+                            str_bonus: 2,
+                            def_bonus: 0,
+                            dex_bonus: 0,
+                            int_bonus: 0,
+                            lck_bonus: 0
+                        });
+
+                        item
+                    },
+
+                    Item::Shield =>
+                    {
+                        // TODO: figure out different tiers of shield
+                        let mut item = Object::new(x, y, '0', colors::BRASS, "Shield", false);
+                        item.item = Some(Item::Sword);
+                        item.equipment = Some(Equipment {
+                            slot: EquipmentSlot::RightHand,
+                            equipped: false,
+                            vit_bonus: 3,
+                            atk_bonus: 0,
+                            str_bonus: 0,
+                            def_bonus: 6,
+                            dex_bonus: 6,
+                            int_bonus: 0,
+                            lck_bonus: 0
+                        });
+
+                        item
+                    },
+
+                    Item::PlateArmor =>
+                    {
+                        // TODO: figure out different tiers of plate armor
+                        let mut item = Object::new(x, y, '#', colors::BRASS, "Plate Armor", false);
+                        item.item = Some(Item::Sword);
+                        item.equipment = Some(Equipment {
+                            slot: EquipmentSlot::RightHand,
+                            equipped: false,
+                            vit_bonus: 5,
+                            atk_bonus: 2,
+                            str_bonus: 2,
+                            def_bonus: 2,
+                            dex_bonus: 2,
+                            int_bonus: 0,
+                            lck_bonus: 5
+                        });
+
+                        item
+                    }
+                };
+
+                item.always_visible = true;
+                objects.push(item);
             }
         }
     }
 }
 
-fn from_dungeon_level(table: &[Transition], level: i32) -> i32
-{
-    table.iter().rev().find(|t| level >= t.level).map_or(0, |t| t.value)
-}
-
+/// Represents a single tile on the map and its associated properties.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Tile
 {
+    /// True if the tile cannot be moved through
     pub blocked: bool,
+
+    /// True if the tile blocks line of sight
     pub blocks_sight: bool,
+
+    /// True if the tile has been explored
     pub explored: bool,
 }
 
 impl Tile
 {
+    /// Creates an empty tile
     fn empty() -> Self
     {
         Tile
@@ -280,6 +443,7 @@ impl Tile
         }
     }
 
+    /// Creates a wall tile
     fn wall() -> Self
     {
         Tile
@@ -291,6 +455,8 @@ impl Tile
     }
 }
 
+/// Represents a rectangle of tiles on the map. Rectangles are used for creating
+/// rooms.
 #[derive(Debug, Clone, Copy)]
 struct Rect
 {
@@ -302,6 +468,7 @@ struct Rect
 
 impl Rect
 {
+    /// Creates a new rectangle of the given size at the given position
     fn new(x: i32, y: i32, w: i32, h: i32) -> Self
     {
         Rect
@@ -313,6 +480,7 @@ impl Rect
         }
     }
 
+    /// Returns the coordinates of a rectangle's center
     fn get_center(&self) -> (i32, i32)
     {
         let center_x = (self.x1 + self.x2) / 2;
@@ -321,13 +489,29 @@ impl Rect
         (center_x, center_y)
     }
 
+    /// Returns true if one rectangle intersects with another given rectangle
     fn intersects_with(&self, other: &Rect) -> bool
     {
         (self.x1 <= other.x2) && (self.x2 >= other.x1) && (self.y1 <= other.y2) && (self.y2 >= other.y1)
     }
 }
 
-/// Wrapper for tcod::map::Map so that I can implement Default trait for it...
+/// Structure that associates a value with a level. Used for different values
+/// for things at different dungeon levels
+struct Transition
+{
+    level: i32,
+    value: i32
+}
+
+/// Returns a value that depends on the given level from the given table that
+/// specifies what value occurs after each level
+fn from_dungeon_level(table: &[Transition], level: i32) -> i32
+{
+    table.iter().rev().find(|t| level >= t.level).map_or(0, |t| t.value)
+}
+
+/// Wrapper for tcod::map::Map so that the Default trait can be implemented for it
 struct FovWrapper
 {
     fov: FovMap
@@ -344,10 +528,4 @@ impl FovWrapper
 impl Default for FovWrapper
 {
     fn default() -> Self { FovWrapper::new() }
-}
-
-struct Transition
-{
-    level: i32,
-    value: i32
 }

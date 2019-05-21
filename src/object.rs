@@ -2,7 +2,7 @@ use crate::game::Game;
 use crate::fighter::Fighter;
 use crate::ai::Ai;
 use crate::item::{ Item, Equipment };
-use crate::gui::MessageLog;
+use crate::gui::{ Messages, MessageLog };
 
 use tcod::colors::{ self, Color };
 use tcod::console::{ Console, BackgroundFlag };
@@ -87,30 +87,36 @@ impl Object
     }
 
     /// Function to make this object attack a different target object
-    pub fn attack(&mut self, target: &mut Object, game: &mut Game)
+    pub fn attack(&mut self, target: &mut Object, inv: &[Object], log: &mut Messages)
     {
-        // TODO: figure out accuracy formulas and shit
-
-        // TODO: figure out damage formula
-        let damage = 0;
+        // TODO: figure out hit chance and damage formulas
+        let hit_chance = self.attack_value(inv) as f32 / target.dexterity_value(inv) as f32;
+        let damage = if hit_chance > 0.5 
+        {
+            self.strength_value(inv) - target.defense_value(inv)
+        }
+        else
+        {
+            0
+        };
 
         // If the rolled damage value is > 0 then the target takes damage
         if damage > 0
         {
-            game.log.add(format!("{} attacks {} for {} damage", self.name, target.name, damage), colors::WHITE);
-            if let Some(xp) = target.take_damage(damage, game)
+            log.add(format!("{} attacks {} for {} damage", self.name, target.name, damage), colors::RED);
+            if let Some(xp) = target.take_damage(damage, log)
             {
                 self.fighter.as_mut().unwrap().xp += xp;
             }
         }
         else
         {
-            game.log.add(format!("{} attacks {} but it has no effect!", self.name, target.name), colors::WHITE);
+            log.add(format!("{} attacks {} but it has no effect!", self.name, target.name), colors::WHITE);
         }
     }
 
     /// Function to make this object take the given amount of damage
-    pub fn take_damage(&mut self, amount: i32, game: &mut Game) -> Option< i32 >
+    pub fn take_damage(&mut self, amount: i32, log: &mut Messages) -> Option< i32 >
     {
         if let Some(fighter) = self.fighter.as_mut()
         {
@@ -125,7 +131,7 @@ impl Object
             if fighter.hp <= 0
             {
                 self.alive = false;
-                fighter.on_death.callback(self, game);
+                fighter.on_death.callback(self, log);
                 return Some(fighter.xp);
             }
         }
@@ -180,9 +186,9 @@ impl Object
     }
 
     /// Function to get all items equipped to this object
-    pub fn get_all_equipped(&self, game: &Game) -> Vec< Equipment >
+    pub fn get_all_equipped(&self, inv: &[Object]) -> Vec< Equipment >
     {
-        game.inventory
+        inv
             .iter()
             .filter(|item| { 
                 item.equipment.map_or(false, |e| e.equipped) 
@@ -191,50 +197,58 @@ impl Object
             .collect()
     }
 
-    pub fn vitality_value(&self, game: &Game) -> i32
+    pub fn vitality_value(&self, inv: &[Object]) -> i32
     {
         let base = self.fighter.map_or(0, |f| f.base_vit);
-        let bonus = self.get_all_equipped(game).iter().fold(0, |sum, e| sum + e.vit_bonus);
+        let bonus = self.get_all_equipped(inv).iter().fold(0, |sum, e| sum + e.vit_bonus);
 
         base + bonus
     }
 
-    pub fn attack_value(&self, game: &Game) -> i32
+    pub fn attack_value(&self, inv: &[Object]) -> i32
     {
         let base = self.fighter.map_or(0, |f| f.base_atk);
-        let bonus = self.get_all_equipped(game).iter().fold(0, |sum, e| sum + e.atk_bonus);
+        let bonus = self.get_all_equipped(inv).iter().fold(0, |sum, e| sum + e.atk_bonus);
 
         base + bonus
     }
 
-    pub fn strength_value(&self, game: &Game) -> i32
+    pub fn strength_value(&self, inv: &[Object]) -> i32
     {
         let base = self.fighter.map_or(0, |f| f.base_str);
-        let bonus = self.get_all_equipped(game).iter().fold(0, |sum, e| sum + e.str_bonus);
+        let bonus = self.get_all_equipped(inv).iter().fold(0, |sum, e| sum + e.str_bonus);
 
         base + bonus
     }
 
-    pub fn defense_value(&self, game: &Game) -> i32
+    pub fn defense_value(&self, inv: &[Object]) -> i32
     {
         let base = self.fighter.map_or(0, |f| f.base_def);
-        let bonus = self.get_all_equipped(game).iter().fold(0, |sum, e| sum + e.def_bonus);
+        let bonus = self.get_all_equipped(inv).iter().fold(0, |sum, e| sum + e.def_bonus);
 
         base + bonus
     }
 
-    pub fn intelligence_value(&self, game: &Game) -> i32
+    pub fn dexterity_value(&self, inv: &[Object]) -> i32
+    {
+        let base = self.fighter.map_or(0, |f| f.base_dex);
+        let bonus = self.get_all_equipped(inv).iter().fold(0, |sum, e| sum + e.dex_bonus);
+
+        base + bonus
+    }
+
+    pub fn intelligence_value(&self, inv: &[Object]) -> i32
     {
         let base = self.fighter.map_or(0, |f| f.base_int);
-        let bonus = self.get_all_equipped(game).iter().fold(0, |sum, e| sum + e.int_bonus);
+        let bonus = self.get_all_equipped(inv).iter().fold(0, |sum, e| sum + e.int_bonus);
 
         base + bonus
     }
 
-    pub fn luck_value(&self, game: &Game) -> i32
+    pub fn luck_value(&self, inv: &[Object]) -> i32
     {
         let base = self.fighter.map_or(0, |f| f.base_lck);
-        let bonus = self.get_all_equipped(game).iter().fold(0, |sum, e| sum + e.lck_bonus);
+        let bonus = self.get_all_equipped(inv).iter().fold(0, |sum, e| sum + e.lck_bonus);
 
         base + bonus
     }

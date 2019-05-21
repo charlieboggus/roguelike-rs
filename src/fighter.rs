@@ -1,6 +1,5 @@
 use crate::object::Object;
-use crate::game::Game;
-use crate::gui::MessageLog;
+use crate::gui::{ Messages, MessageLog};
 
 use tcod::colors;
 
@@ -11,6 +10,7 @@ pub struct Fighter
     pub base_atk: i32,  // Attack - stat for attack accuracy
     pub base_str: i32,  // Strength - stat for attack damage
     pub base_def: i32,  // Defense - damage reduction
+    pub base_dex: i32,  // Dexterity - stat for attack dodge
     pub base_int: i32,  // Intelligence - magic damage 
     pub base_lck: i32,  // Luck - stat for luck; affects stuff like drops/items
 
@@ -23,7 +23,7 @@ pub struct Fighter
 
 impl Fighter
 {
-    pub fn new(vit: i32, atk: i32, strn: i32, def: i32, int: i32, lck: i32, xp: i32, on_death: DeathCallback) -> Self
+    pub fn new(vit: i32, atk: i32, strn: i32, def: i32, dex: i32, int: i32, lck: i32, xp: i32, on_death: DeathCallback) -> Self
     {
         // Formula to determine HP: Max HP = 10 + (5 * vitality)
         let max_hp = 10 + (5 * vit);
@@ -34,6 +34,7 @@ impl Fighter
             base_atk: atk,
             base_str: strn,
             base_def: def,
+            base_dex: dex,
             base_int: int,
             base_lck: lck,
 
@@ -55,28 +56,28 @@ pub enum DeathCallback
 
 impl DeathCallback
 {
-    pub fn callback(self, object: &mut Object, game: &mut Game)
+    pub fn callback(self, object: &mut Object, log: &mut Messages)
     {
-        let callback: fn(&mut Object, &mut Game) = match self
+        let callback: fn(&mut Object, &mut Messages) = match self
         {
             DeathCallback::PlayerDeath => player_death_callback,
             DeathCallback::MonsterDeath => monster_death_callback
         };
 
-        callback(object, game);
+        callback(object, log);
     }
 }
 
-fn player_death_callback(player: &mut Object, game: &mut Game)
+fn player_death_callback(player: &mut Object, log: &mut Messages)
 {
-    game.log.add(format!("{} has died!", player.name), colors::RED);
+    log.add(format!("{} has died!", player.name), colors::RED);
     player.c = '%';
     player.color = colors::DARK_RED;
 }
 
-fn monster_death_callback(monster: &mut Object, game: &mut Game)
+fn monster_death_callback(monster: &mut Object, log: &mut Messages)
 {
-    game.log.add(format!("The {} has died! You gain {} experience points.", monster.name, monster.fighter.unwrap().xp), colors::PINK);
+    log.add(format!("The {} has died! You gain {} experience points.", monster.name, monster.fighter.unwrap().xp), colors::PINK);
     monster.c = '%';
     monster.color = colors::DARK_RED;
     monster.name = format!("Remains of {}", monster.name);

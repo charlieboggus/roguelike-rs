@@ -1,8 +1,8 @@
 use crate::TCOD;
-use crate::map::{ Map, MAP_WIDTH, MAP_HEIGHT };
+use crate::map::Map;
 use crate::object::{ self, Object };
 use crate::fighter::{ Fighter, DeathCallback };
-use crate::item;
+use crate::item::{ self, * };
 use crate::ai::{ self, Ai };
 use crate::menu;
 use crate::gui::{ self, * };
@@ -50,7 +50,8 @@ impl Game
         // TODO: character creation to determine player name and stats?
         let mut player = Object::new(0, 0, '@', colors::WHITE, "Player", true);
         player.alive = true;
-        player.fighter = Some(Fighter::new(1, 1, 1, 1, 1, 1, 0, DeathCallback::PlayerDeath));
+        // TODO: balance player stats
+        player.fighter = Some(Fighter::new(5, 5, 5, 5, 5, 5, 5, 0, DeathCallback::PlayerDeath));
 
         // Create objects vec
         let mut objects = vec![ player ];
@@ -61,7 +62,22 @@ impl Game
 
         // Create inventory w/ starting gear
         let mut inventory: Vec< Object > = vec![];
-        // TODO: starting gear
+
+        let mut dagger = Object::new(0, 0, '-', colors::BRASS, "Dagger", false);
+        dagger.item = Some(Item::Sword);
+        dagger.equipment = Some(Equipment {
+            slot: EquipmentSlot::RightHand,
+            equipped: false,
+            vit_bonus: 0,
+            atk_bonus: 1,
+            str_bonus: 1,
+            def_bonus: 0,
+            dex_bonus: 0,
+            int_bonus: 0,
+            lck_bonus: 0
+        });
+
+        inventory.push(dagger);
 
         // Return newly created game
         Game
@@ -145,7 +161,7 @@ impl Game
         }
 
         // Blit map and objects to root console
-        blit(&mut tcod.con, (0, 0), (MAP_WIDTH, MAP_HEIGHT), &mut tcod.root, (0, 0), 1.0, 1.0);
+        blit(&mut tcod.con, (0, 0), (self.map.width, self.map.height), &mut tcod.root, (0, 0), 1.0, 1.0);
 
         // Render gui
         gui::render_gui(tcod, self);
@@ -163,22 +179,21 @@ impl Game
             (Key { code: KeyCode::Escape, .. }, _) => PlayerAction::Exit,
 
             // Up to move player upwards
-            (Key { code: KeyCode::Up, .. }, true) => { object::move_by(PLAYER_ID, 0, -1, self); PlayerAction::Action },
+            (Key { code: KeyCode::Up, .. }, true) => { player_take_turn(0, -1, self); PlayerAction::Action },
 
             // Down to move player downwards
-            (Key { code: KeyCode::Down, .. }, true) => { object::move_by(PLAYER_ID, 0, 1, self); PlayerAction::Action },
+            (Key { code: KeyCode::Down, .. }, true) => { player_take_turn(0, 1, self); PlayerAction::Action },
 
             // Left to move player left
-            (Key { code: KeyCode::Left, .. }, true) => { object::move_by(PLAYER_ID, -1, 0, self); PlayerAction::Action },
+            (Key { code: KeyCode::Left, .. }, true) => { player_take_turn(-1, 0, self); PlayerAction::Action },
 
             // Right to move player right
-            (Key { code: KeyCode::Right, .. }, true) => { object::move_by(PLAYER_ID, 1, 0, self); PlayerAction::Action },
+            (Key { code: KeyCode::Right, .. }, true) => { player_take_turn(1, 0, self); PlayerAction::Action },
 
             // R to skip player turn
             (Key { printable: 'r', .. }, true) => PlayerAction::Action,
 
             // F to interact with item or non-monster object with
-            // TODO: this
             (Key { printable: 'f', .. }, true) => 
             {
                 // first check if the object is an item
@@ -198,13 +213,6 @@ impl Game
                 }
 
                 PlayerAction::NoAction 
-            },
-
-            // E to interact with monster (melee attack)
-            // TODO: this
-            (Key { printable: 'e', .. }, true) => 
-            {
-                PlayerAction::Action 
             },
 
             // I to open inventory
@@ -292,17 +300,40 @@ fn player_level_up(tcod: &mut TCOD, game: &mut Game)
             // Defense
             3 => fighter.base_def += 1,
 
+            // Dexterity
+            4 => fighter.base_dex += 1,
+
             // Intelligence
-            4 => fighter.base_int += 1,
+            5 => fighter.base_int += 1,
 
             // Luck
-            5 => fighter.base_lck += 1,
+            6 => fighter.base_lck += 1,
 
             _ => unreachable!()
         }
 
         fighter.hp = fighter.max_hp;
         fighter.xp -= level_xp;
+    }
+}
+
+fn player_take_turn(dx: i32, dy: i32, game: &mut Game)
+{
+    let x = game.objects[PLAYER_ID].pos.0 + dx;
+    let y = game.objects[PLAYER_ID].pos.1 + dy;
+    let target_id = game.objects.iter().position(|o| o.fighter.is_some() && o.pos == (x, y));
+    match target_id
+    {
+        Some(target_id) =>
+        {
+            let (player, target) = object::mut_two(PLAYER_ID, target_id, &mut game.objects);
+            player.attack(target, &game.inventory, &mut game.log);
+        }
+
+        None =>
+        {
+            object::move_by(PLAYER_ID, dx, dy, game);
+        }
     }
 }
 
@@ -324,7 +355,7 @@ fn ai_take_turn(id: usize, game: &mut Game)
 fn advance_dungeon_level(game: &mut Game)
 {
     // Heal player up by half their max hp
-    game.log.add("You take a moment to rest and recover your strength.", colors::VIOLET);
+    game.log.add("You take a moment to rest and recover your strength.", colors::GREEN);
     let heal_amt = game.objects[PLAYER_ID].fighter.map_or(0, |f| f.max_hp / 2);
     game.objects[PLAYER_ID].heal(heal_amt);
 

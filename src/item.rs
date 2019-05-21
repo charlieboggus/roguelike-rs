@@ -11,6 +11,9 @@ pub const HEALTH_POTION_HEAL_AMT: i32 = 5;
 pub enum Item
 {
     HealthPotion,
+    Sword,
+    Shield,
+    PlateArmor
 }
 
 enum ItemUseResult
@@ -27,6 +30,9 @@ pub fn use_item(inv_id: usize, game: &mut Game, tcod: &mut TCOD)
         let on_use = match item
         {
             Item::HealthPotion => use_health_potion,
+            Item::Sword => toggle_equipment,
+            Item::Shield => toggle_equipment,
+            Item::PlateArmor => toggle_equipment
         };
 
         match on_use(inv_id, game, tcod)
@@ -79,13 +85,46 @@ pub fn drop_item(inv_id: usize, game: &mut Game)
     game.objects.push(item);
 }
 
-fn use_health_potion(inv_id: usize, game: &mut Game, tcod: &mut TCOD) -> ItemUseResult
+fn use_health_potion(_inv_id: usize, game: &mut Game, _tcod: &mut TCOD) -> ItemUseResult
 {
+    if let Some(fighter) = game.objects[PLAYER_ID].fighter
+    {
+        if fighter.hp == fighter.max_hp
+        {
+            game.log.add("You are already at full health.", colors::WHITE);
+            return ItemUseResult::Cancelled;
+        }
+
+        game.log.add("Your wounds start to feel better.", colors::LIGHT_VIOLET);
+        game.objects[PLAYER_ID].heal(HEALTH_POTION_HEAL_AMT);
+        return ItemUseResult::Used;
+    }
+
     ItemUseResult::Cancelled
 }
 
-fn toggle_equipment(inv_id: usize, game: &mut Game, tcod: &mut TCOD) -> ItemUseResult
+fn toggle_equipment(inv_id: usize, game: &mut Game, _tcod: &mut TCOD) -> ItemUseResult
 {
+    let equipment = match game.inventory[inv_id].equipment
+    {
+        Some(equipment) => equipment,
+        None => return ItemUseResult::Cancelled
+    };
+
+    if let Some(old) = get_equipped_in_slot(equipment.slot, &game.inventory)
+    {
+        game.inventory[old].unequip(&mut game.log);
+    }
+
+    if equipment.equipped
+    {
+        game.inventory[inv_id].unequip(&mut game.log);
+    }
+    else
+    {
+        game.inventory[inv_id].equip(&mut game.log);
+    }
+
     ItemUseResult::UsedAndKept
 }
 
@@ -98,6 +137,7 @@ pub struct Equipment
     pub atk_bonus: i32,
     pub str_bonus: i32,
     pub def_bonus: i32,
+    pub dex_bonus: i32,
     pub int_bonus: i32,
     pub lck_bonus: i32
 }
@@ -119,12 +159,12 @@ impl std::fmt::Display for EquipmentSlot
     {
         match *self
         {
-            EquipmentSlot::Head         => write!(f, "Head"),
-            EquipmentSlot::Torso        => write!(f, "Torso"),
-            EquipmentSlot::Legs         => write!(f, "Legs"),
-            EquipmentSlot::Feet         => write!(f, "Feet"),
-            EquipmentSlot::LeftHand     => write!(f, "Left Hand"),
-            EquipmentSlot::RightHand    => write!(f, "Right Hand")
+            EquipmentSlot::Head         => write!(f, "{}", "Head"),
+            EquipmentSlot::Torso        => write!(f, "{}", "Torso"),
+            EquipmentSlot::Legs         => write!(f, "{}", "Legs"),
+            EquipmentSlot::Feet         => write!(f, "{}", "Feet"),
+            EquipmentSlot::LeftHand     => write!(f, "{}", "Left Hand"),
+            EquipmentSlot::RightHand    => write!(f, "{}", "Right Hand")
         }
     }
 }
